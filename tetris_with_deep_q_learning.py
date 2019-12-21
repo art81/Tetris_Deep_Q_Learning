@@ -30,7 +30,7 @@ class DQNAgent:
 		self.action_size = action_size
 		self.memory = deque(maxlen=2000)
 		self.gamma = 0.95	# discount rate
-		self.epsilon = 1.0  # exploration rate
+		self.epsilon = 0.0 #1.0  # exploration rate
 		self.epsilon_min = 0.01
 		self.epsilon_decay = 0.995
 		self.learning_rate = 0.001
@@ -39,16 +39,18 @@ class DQNAgent:
 	def build_model(self):
 		# Neural Net for Deep-Q learning Model
 		model = Sequential(name='Deep_Q_Learning_Model')
+		ss = self.state_shape
 		#State size for tetris is
-		model.add(Conv2D(64, (5, 5), strides=(1, 1), padding='same', input_shape=self.state_shape))
+		model.add(Reshape((ss[0], ss[1], 1), input_shape=(ss[0], ss[1], )))
+		model.add(Conv2D(64, (5, 5), padding='same'))
 		model.add(LeakyReLU())
 		model.add(Dropout(0.3))
 
-		model.add(Conv2D(32, (5, 5), strides=(1, 1), padding='same'))
+		model.add(Conv2D(32, (5, 5), padding='same'))
 		model.add(LeakyReLU())
 		model.add(Dropout(0.3))
 
-		model.add(Conv2D(16, (3, 3), strides=(1, 1), padding='same'))
+		model.add(Conv2D(16, (3, 3), padding='same'))
 		model.add(LeakyReLU())
 
 		model.add(Flatten())
@@ -59,6 +61,7 @@ class DQNAgent:
 
 		model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
 
+		print("Input Shape: " + str((ss[0], ss[1], )))
 		print(model.summary())
 		return model
 
@@ -68,7 +71,11 @@ class DQNAgent:
 	def act(self, state):
 		if np.random.rand() <= self.epsilon:
 			return random.randrange(self.action_size)
-		act_values = self.model.predict(state)
+
+		print("PREDICTING ACTION HERE")
+		tf_state = tf.convert_to_tensor(np.reshape(state, (17,8)), dtype=tf.int8)
+		print(tf_state)
+		act_values = self.model(tf_state)
 		return np.argmax(act_values[0])  # returns action
 
 	def replay(self, batch_size):
@@ -76,8 +83,10 @@ class DQNAgent:
 		for state, action, reward, next_state, done in minibatch:
 			target = reward
 			if not done:
-			  target = reward + self.gamma * \
-					   np.amax(self.model.predict(next_state)[0])
+				print("RUNNING STATE THROUGH MODEL")
+				tf_nextState = tf.convert_to_tensor(next_state, dtype=tf.int8)
+				print(tf_nextState)
+				target = reward + self.gamma*np.amax(self.model(tf_nextState, training=False))
 			target_f = self.model.predict(state)
 			target_f[0][action] = target
 			self.model.fit(state, target_f, epochs=1, verbose=0)
@@ -158,7 +167,7 @@ class TetrisEnv(object):
 		for cy, row in enumerate(shape):
 			for cx, cell in enumerate(row):
 				try:
-					if cell and board[ cy + off_y ][ cx + off_x ]:
+					if cell and board[ cy + off_y + 1 ][ cx + off_x ]:
 						return True
 				except IndexError:
 					return True
@@ -179,7 +188,7 @@ class TetrisEnv(object):
 
 	def new_board(self):
 		board = [ [ 0 for x in range(config['cols']) ] for y in range(config['rows']) ]
-		#board += [[ 1 for x in range(config['cols'])]]
+		board += [[ 1 for x in range(config['cols'])]]
 		return board
 
 	def __init__(self):
@@ -222,6 +231,7 @@ class TetrisEnv(object):
 				pygame.draw.rect(self.screen, (0,0,0), ((off_x+x) * config['cell_size'], (off_y+y) * config['cell_size'], config['cell_size'], config['cell_size']),3)
 
 	def move(self, delta_x):
+		print("MOVE FUNCTION")
 		if not self.gameover:
 			new_x = self.stone_x + delta_x
 			if new_x < 0:
@@ -363,7 +373,7 @@ if __name__ == "__main__":
 	tetrisEnv = TetrisEnv()
 	tetrisEnv.gameover = False
 	#runTetrisGame(tetrisEnv)
-	state_size = (config['rows'], config['cols'], 1)
+	state_size = (config['rows'] + 1, config['cols'])
 	action_size = 5 #Left, Right, Rotate, drop to the bottom, do nothing/drop one row
 	agent = DQNAgent(state_size, action_size)
 	# agent.load("./save/cartpole-dqn.h5")
